@@ -1,0 +1,145 @@
+
+video-call/
+│
+├── server.js
+└── public/
+    └── index.html
+
+1️⃣ Install Requirements
+
+You need Node.js installed.
+
+npm init -y
+npm install express socket.io
+
+2️⃣ server.js (Signaling Server)
+const express = require("express");
+const app = express();
+const http = require("http");
+const server = http.createServer(app);
+const io = require("socket.io")(server);
+
+app.use(express.static("public"));
+
+io.on("connection", socket => {
+  console.log("User connected:", socket.id);
+
+  socket.on("join-room", roomId => {
+    socket.join(roomId);
+    socket.to(roomId).emit("user-joined");
+  });
+
+  socket.on("signal", ({ roomId, data }) => {
+    socket.to(roomId).emit("signal", data);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected");
+  });
+});
+
+server.listen(3000, () => {
+  console.log("Server running at http://localhost:3000");
+});
+
+3️⃣ public/index.html (Frontend)
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Video Call</title>
+  <script src="url/...pk"></script>
+  <style>
+    body {
+      background: #0f172a;
+      color: white;
+      text-align: center;
+      font-family: Arial;
+    }
+    video {
+      width: 45%;
+      border-radius: 10px;
+      border: 2px solid #334155;
+      margin: 5px;
+    }
+    button {
+      padding: 10px 15px;
+      margin: 10px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+<h2>📹 2-Person Video Call</h2>
+
+<input id="roomId" placeholder="Room ID" />
+<button onclick="joinRoom()">Join Room</button>
+
+<br><br>
+
+<video id="localVideo" autoplay muted></video>
+<video id="remoteVideo" autoplay></video>
+
+<script>
+  const socket = io();
+  let localStream;
+  let peer;
+  let roomId;
+
+  const config = {
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+  };
+
+  async function joinRoom() {
+    roomId = document.getElementById("roomId").value;
+    socket.emit("join-room", roomId);
+
+    localStream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: true
+    });
+
+    document.getElementById("localVideo").srcObject = localStream;
+
+    peer = new RTCPeerConnection(config);
+    localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
+
+    peer.ontrack = e => {
+      document.getElementById("remoteVideo").srcObject = e.streams[0];
+    };
+
+    peer.onicecandidate = e => {
+      if (e.candidate) {
+        socket.emit("signal", { roomId, data: { candidate: e.candidate } });
+      }
+    };
+  }
+
+  socket.on("user-joined", async () => {
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    socket.emit("signal", { roomId, data: { offer } });
+  });
+
+  socket.on("signal", async data => {
+    if (data.offer) {
+      await peer.setRemoteDescription(new RTCSessionDescription(data.offer));
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      socket.emit("signal", { roomId, data: { answer } });
+    }
+    if (data.answer) {
+      await peer.setRemoteDescription(new RTCSessionDescription(data.answer));
+    }
+    if (data.candidate) {
+      await peer.addIceCandidate(new RTCIceCandidate(data.candidate));
+    }
+  });
+</script>
+
+</body>
+</html>
+/socket.io/socket.io.js
